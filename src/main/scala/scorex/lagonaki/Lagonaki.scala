@@ -24,6 +24,8 @@ import scala.reflect.runtime.universe._
 
 class Lagonaki(settingsFilename: String) extends {
   override protected val additionalMessageSpecs: Seq[MessageSpec[_]] = Seq()
+  val applicationName: String = "test"
+  val appVersion: ApplicationVersion = ApplicationVersion(0, 0, 0)
 } with Application {
   override type CData = PermaConsensusBlockData
   override type P = PublicKey25519Proposition
@@ -45,10 +47,6 @@ class Lagonaki(settingsFilename: String) extends {
 
   override implicit val transactionModule = new SimpleTransactionModule(settings, networkController)
   val consensusModule = new PermaConsensusModule(Sized.wrap(rootHash), settings, transactionModule)
-
-  override val applicationName: String = "test"
-
-  override def appVersion: ApplicationVersion = ApplicationVersion(0, 0, 0)
 
   override val apiRoutes = Seq(TransactionsApiRoute(transactionModule, settings))
   override val apiTypes = Seq(typeOf[TransactionsApiRoute])
