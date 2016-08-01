@@ -1,10 +1,14 @@
 package scorex.lagonaki
 
 import java.io.{File, RandomAccessFile}
+import java.nio.file.{Paths, Files}
 
+import scorex.api.http.TransactionsApiRoute
 import scorex.app.{Application, ApplicationVersion}
+import scorex.crypto.authds.merkle.MerkleTree
 import scorex.crypto.authds.merkle.versioned.MvStoreVersionedMerklizedIndexedSeq
 import scorex.crypto.authds.storage.{KVStorage, MvStoreStorageType}
+import scorex.crypto.encode.Base58
 import scorex.crypto.hash.FastCryptographicHash
 import scorex.network.message.MessageSpec
 import scorex.perma.consensus.{PermaAuthData, PermaConsensusBlockData, PermaConsensusModule}
@@ -16,47 +20,28 @@ import scorex.transaction.{LagonakiTransaction, SimpleTransactionModule, Simples
 import scorex.utils.ScorexLogging
 import shapeless.Sized
 
+import scala.reflect.runtime.universe._
 
 class Lagonaki(settingsFilename: String) extends {
   override protected val additionalMessageSpecs: Seq[MessageSpec[_]] = Seq()
-  override val apiTypes = Seq()
-  override val apiRoutes = Seq()
-
 } with Application {
+  override type CData = PermaConsensusBlockData
+  override type P = PublicKey25519Proposition
+  override type TX = LagonakiTransaction
+  override type TData = SimplestTransactionalData
+
   override implicit val settings = new Settings with PermaSettings {
     override lazy val filename = settingsFilename
+
+    override lazy val rootHash: Array[Byte] = Base58.decode("88YUWmUu3VvwaWwZyoJAjoXyLCN6K3aZBJPKtp9VFi3D").get
   }
 
   implicit lazy val authDataStorage: KVStorage[Long, PermaAuthData, MvStoreStorageType] =
     new AuthDataStorage(Some(settings.authDataStorage))
 
-  def addBlock(i: Long): Unit = {
-    val p = tree.elementAndProof(i).get
-    authDataStorage.set(i, new PermaAuthData(p.data, p.proof))
-    if (i > 0) {
-      addBlock(i - 1)
-    }
-  }
+  val rootHash = settings.rootHash
 
-  log.info(s"Generating random data set of size ${PermaConstants.n * PermaConstants.segmentSize}")
-  val treeDir = new File(settings.treeDir)
-  treeDir.mkdirs()
-  val datasetFile = settings.treeDir + "/data.file"
-  new RandomAccessFile(datasetFile, "rw").setLength(PermaConstants.n * PermaConstants.segmentSize)
-  log.info("Calculate tree")
-  val tree = MvStoreVersionedMerklizedIndexedSeq.fromFile(datasetFile, Some(settings.treeDir), PermaConstants.segmentSize, FastCryptographicHash)
-
-  log.info("Test tree")
-  val index = PermaConstants.n - 3
-  val leaf = tree.elementAndProof(index).get
-  require(leaf.check(tree.rootHash)(FastCryptographicHash))
-
-  log.info("Put ALL data to local storage")
-  new File(settings.treeDir).mkdirs()
-
-  addBlock(PermaConstants.n - 1)
-  val rootHash = tree.rootHash
-
+  if (settings.isTrustedDealer) dealerSetup()
 
   override implicit val transactionModule = new SimpleTransactionModule(settings, networkController)
   val consensusModule = new PermaConsensusModule(Sized.wrap(rootHash), settings, transactionModule)
@@ -65,11 +50,50 @@ class Lagonaki(settingsFilename: String) extends {
 
   override def appVersion: ApplicationVersion = ApplicationVersion(0, 0, 0)
 
-  override type CData = PermaConsensusBlockData
-  override type P = PublicKey25519Proposition
-  override type TX = LagonakiTransaction
-  override type TData = SimplestTransactionalData
+  override val apiRoutes = Seq(TransactionsApiRoute(transactionModule, settings))
+  override val apiTypes = Seq(typeOf[TransactionsApiRoute])
 
+  private def dealerSetup(): Unit = {
+    val TreeFileName = MvStoreVersionedMerklizedIndexedSeq.TreeFileName
+    val SegmentsFileName = MvStoreVersionedMerklizedIndexedSeq.SegmentsFileName
+    val tree = if (Files.exists(Paths.get(settings.treeDir + TreeFileName + "-0.mapDB"))) {
+      log.info("Get existing tree")
+      MvStoreVersionedMerklizedIndexedSeq(
+        Some(settings.treeDir + TreeFileName),
+        Some(settings.treeDir + SegmentsFileName),
+        1,
+        FastCryptographicHash)
+    } else {
+      log.info(s"Generating random data set of size ${PermaConstants.n * PermaConstants.segmentSize}")
+      val treeDir = new File(settings.treeDir)
+      treeDir.mkdirs()
+      val datasetFile = settings.treeDir + "/data.file"
+      new RandomAccessFile(datasetFile, "rw").setLength(PermaConstants.n * PermaConstants.segmentSize)
+      log.info("Calculate tree")
+      val tree = MvStoreVersionedMerklizedIndexedSeq.fromFile(
+        datasetFile, Some(settings.treeDir), PermaConstants.segmentSize, FastCryptographicHash)
+
+      def addBlock(i: Long): Unit = {
+        val p = tree.elementAndProof(i).get
+        authDataStorage.set(i, new PermaAuthData(p.data, p.proof))
+        if (i > 0) {
+          addBlock(i - 1)
+        }
+      }
+
+      log.info("Test tree")
+      val index = PermaConstants.n - 3
+      val leaf = tree.elementAndProof(index).get
+      require(leaf.check(tree.rootHash)(FastCryptographicHash))
+
+      log.info("Put ALL data to local storage")
+      new File(settings.treeDir).mkdirs()
+
+      addBlock(PermaConstants.n - 1)
+      tree
+    }
+    require(tree.rootHash sameElements rootHash, s"${Base58.encode(tree.rootHash)} != ${Base58.encode(rootHash)}")
+  }
 }
 
 
