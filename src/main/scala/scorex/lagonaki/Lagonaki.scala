@@ -1,11 +1,10 @@
 package scorex.lagonaki
 
 import java.io.{File, RandomAccessFile}
-import java.nio.file.{Paths, Files}
+import java.nio.file.{Files, Paths}
 
 import scorex.api.http.TransactionsApiRoute
 import scorex.app.{Application, ApplicationVersion}
-import scorex.crypto.authds.merkle.MerkleTree
 import scorex.crypto.authds.merkle.versioned.MvStoreVersionedMerklizedIndexedSeq
 import scorex.crypto.authds.storage.{KVStorage, MvStoreStorageType}
 import scorex.crypto.encode.Base58
@@ -45,10 +44,10 @@ class Lagonaki(settingsFilename: String) extends {
 
   if (settings.isTrustedDealer) dealerSetup()
 
-  override implicit val transactionModule = new SimpleTransactionModule(settings, networkController)
-  val consensusModule = new PermaConsensusModule(Sized.wrap(rootHash), settings, transactionModule)
+  override implicit val transactionalModule = new SimpleTransactionModule(settings, networkController)
+  val consensusModule = new PermaConsensusModule(Sized.wrap(rootHash), settings, transactionalModule)
 
-  override val apiRoutes = Seq(TransactionsApiRoute(transactionModule, settings))
+  override val apiRoutes = Seq(TransactionsApiRoute(transactionalModule, settings))
   override val apiTypes = Seq(typeOf[TransactionsApiRoute])
 
   private def dealerSetup(): Unit = {

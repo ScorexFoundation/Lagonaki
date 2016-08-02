@@ -14,7 +14,7 @@
   "rpcPort": 9081,
   "rpcAllowed": [],
   "maxRollback": 100,
-  "offlineGeneration": false,
+  "offlineGeneration": true,
   "cors": true,
   "testScript": true,
   "apiKeyHash": "GmVvcpx1BRUPDZiADbZ7a6zgQV3Sgj2GhNoEiTH9Drdx",
@@ -23,5 +23,5 @@
     "treeDir": "/opt/scorex/dealer/data/tree",
     "authDataStorage": "permatree.db"
   },
-  "blockGenerationDelay": 15000
+  "blockGenerationDelay": 1500
 }
