@@ -5,6 +5,7 @@ import java.nio.file.{Files, Paths}
 
 import scorex.api.http.TransactionsApiRoute
 import scorex.app.{Application, ApplicationVersion}
+import scorex.block.{ConsensusValidator, BlockValidator, RewardsCalculator}
 import scorex.crypto.authds.merkle.versioned.MvStoreVersionedMerklizedIndexedSeq
 import scorex.crypto.authds.storage.{KVStorage, MvStoreStorageType}
 import scorex.crypto.encode.Base58
@@ -13,9 +14,10 @@ import scorex.network.message.MessageSpec
 import scorex.perma.consensus.{PermaAuthData, PermaConsensusBlockData, PermaConsensusModule}
 import scorex.perma.settings.{PermaConstants, PermaSettings}
 import scorex.perma.storage.AuthDataStorage
+import scorex.serialization.BytesParseable
 import scorex.settings.Settings
 import scorex.transaction.box.proposition.PublicKey25519Proposition
-import scorex.transaction.{LagonakiTransaction, SimpleTransactionModule, SimplestTransactionalData}
+import scorex.transaction.{SimpleTransactionValidator, LagonakiTransaction, SimpleTransactionModule, SimplestTransactionalData}
 import scorex.utils.ScorexLogging
 import shapeless.Sized
 
@@ -26,10 +28,10 @@ class Lagonaki(settingsFilename: String) extends {
   val applicationName: String = "test"
   val appVersion: ApplicationVersion = ApplicationVersion(0, 0, 0)
 } with Application {
-  override type CData = PermaConsensusBlockData
+  override type CD = PermaConsensusBlockData
   override type P = PublicKey25519Proposition
   override type TX = LagonakiTransaction
-  override type TData = SimplestTransactionalData
+  override type TD = SimplestTransactionalData
 
   override implicit val settings = new Settings with PermaSettings {
     override lazy val filename = settingsFilename
@@ -42,12 +44,21 @@ class Lagonaki(settingsFilename: String) extends {
 
   val rootHash = settings.rootHash
 
+
   if (settings.isTrustedDealer) dealerSetup()
 
-  override implicit val transactionalModule = new SimpleTransactionModule(settings, networkController)
-  val consensusModule = new PermaConsensusModule(Sized.wrap(rootHash), settings, transactionalModule)
+  override val transactionalParser: BytesParseable[SimplestTransactionalData] = SimplestTransactionalData
+  override val consensusParser: BytesParseable[PermaConsensusBlockData] = PermaConsensusBlockData
 
-  override val apiRoutes = Seq(TransactionsApiRoute(transactionalModule, settings))
+
+  override val blockValidator  = new LagonakiBlockValidator(settings.rootHash)
+  override val rewardCalculator: RewardsCalculator[PublicKey25519Proposition, LagonakiTransaction, SimplestTransactionalData, PermaConsensusBlockData] = _
+  override val stateHolder: LagonakiStateHolder = new LagonakiStateHolder(settings.dataDirOpt)
+
+  override implicit val transactionalModule = new SimpleTransactionModule(settings, stateHolder.mempool, stateHolder.state)
+  override implicit val consensusModule = new PermaConsensusModule(Sized.wrap(rootHash), settings, networkController, stateHolder.history)
+
+  override val apiRoutes = Seq(TransactionsApiRoute(stateHolder.mempool, settings))
   override val apiTypes = Seq(typeOf[TransactionsApiRoute])
 
   private def dealerSetup(): Unit = {
