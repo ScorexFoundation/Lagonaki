@@ -5,7 +5,6 @@ import java.nio.file.{Files, Paths}
 
 import scorex.api.http.TransactionsApiRoute
 import scorex.app.{Application, ApplicationVersion}
-import scorex.block.{ConsensusValidator, BlockValidator, RewardsCalculator}
 import scorex.crypto.authds.merkle.versioned.MvStoreVersionedMerklizedIndexedSeq
 import scorex.crypto.authds.storage.{KVStorage, MvStoreStorageType}
 import scorex.crypto.encode.Base58
@@ -17,7 +16,7 @@ import scorex.perma.storage.AuthDataStorage
 import scorex.serialization.BytesParseable
 import scorex.settings.Settings
 import scorex.transaction.box.proposition.PublicKey25519Proposition
-import scorex.transaction.{SimpleTransactionValidator, LagonakiTransaction, SimpleTransactionModule, SimplestTransactionalData}
+import scorex.transaction.{LagonakiTransaction, SimpleTransactionModule, SimplestTransactionalData}
 import scorex.utils.ScorexLogging
 import shapeless.Sized
 
@@ -51,8 +50,8 @@ class Lagonaki(settingsFilename: String) extends {
   override val consensusParser: BytesParseable[PermaConsensusBlockData] = PermaConsensusBlockData
 
 
-  override val blockValidator  = new LagonakiBlockValidator(settings.rootHash)
-  override val rewardCalculator: RewardsCalculator[PublicKey25519Proposition, LagonakiTransaction, SimplestTransactionalData, PermaConsensusBlockData] = _
+  override val blockValidator = new LagonakiBlockValidator(settings.rootHash)
+  override val rewardCalculator = LagonakiRewardCalculator
   override val stateHolder: LagonakiStateHolder = new LagonakiStateHolder(settings.dataDirOpt)
 
   override implicit val transactionalModule = new SimpleTransactionModule(settings, stateHolder.mempool, stateHolder.state)
