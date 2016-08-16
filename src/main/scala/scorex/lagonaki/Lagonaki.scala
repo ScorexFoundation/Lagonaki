@@ -3,13 +3,14 @@ package scorex.lagonaki
 import java.io.{File, RandomAccessFile}
 import java.nio.file.{Files, Paths}
 
-import scorex.api.http.TransactionsApiRoute
+import scorex.api.http.{UtilsApiRoute, PeersApiRoute, TransactionsApiRoute}
 import scorex.app.{Application, ApplicationVersion}
 import scorex.crypto.authds.merkle.versioned.MvStoreVersionedMerklizedIndexedSeq
 import scorex.crypto.authds.storage.{KVStorage, MvStoreStorageType}
 import scorex.crypto.encode.Base58
 import scorex.crypto.hash.FastCryptographicHash
 import scorex.network.message.MessageSpec
+import scorex.perma.api.http.PermaConsensusApiRoute
 import scorex.perma.consensus.{PermaAuthData, PermaConsensusBlockData, PermaConsensusModule}
 import scorex.perma.settings.{PermaConstants, PermaSettings}
 import scorex.perma.storage.AuthDataStorage
@@ -57,8 +58,16 @@ class Lagonaki(settingsFilename: String) extends {
   override implicit val transactionalModule = new SimpleTransactionModule(settings, stateHolder.mempool, stateHolder.state)
   override implicit val consensusModule = new PermaConsensusModule(Sized.wrap(rootHash), settings, networkController, stateHolder.history)
 
-  override val apiRoutes = Seq(TransactionsApiRoute(stateHolder.mempool, settings))
-  override val apiTypes = Seq(typeOf[TransactionsApiRoute])
+  override val apiRoutes = Seq(
+    TransactionsApiRoute(stateHolder.mempool, settings),
+    UtilsApiRoute(settings),
+    new PermaConsensusApiRoute(consensusModule, stateHolder, settings)
+  )
+  override val apiTypes = Seq(
+    typeOf[TransactionsApiRoute],
+    typeOf[UtilsApiRoute],
+    typeOf[PermaConsensusApiRoute]
+  )
 
   private def dealerSetup(): Unit = {
     val TreeFileName = MvStoreVersionedMerklizedIndexedSeq.TreeFileName
