@@ -21,6 +21,7 @@ import scorex.utils.ScorexLogging
 import shapeless.Sized
 
 import scala.reflect.runtime.universe._
+import scala.util.Failure
 
 class Lagonaki(settingsFilename: String) extends {
   override protected val additionalMessageSpecs: Seq[MessageSpec[_]] = Seq()
@@ -109,12 +110,25 @@ object Lagonaki extends App with ScorexLogging {
   log.debug("Start server with args: {} ", args)
   val filename = args.headOption.getOrElse("settings.json")
 
-  val application = new Lagonaki(filename)
+  val app = new Lagonaki(filename)
 
   log.debug("PermaScorex has been started")
-  application.run()
+  if (app.stateHolder.history.isEmpty) {
+    //TODO fix. Send message to History Synchronizer?
+    val genesisBlock = {
+      import app._
+      scorex.block.Block.genesis[P, TX, TD, CD](settings.genesisTimestamp)
+    }
+    val changes = app.rewardCalculator.changes(genesisBlock, app.stateHolder.state)
+    app.stateHolder.appendBlock(genesisBlock, changes) match {
+      case Failure(e) => log.error("Failed to append genesis block", e)
+      case _ => log.info("Genesis block has been added to the state")
+    }
+  }.ensuring(app.stateHolder.history.height() >= 1)
 
-  if (application.wallet.privateKeyAccounts().isEmpty) application.wallet.generateNewAccounts(1)
+  app.run()
+
+  if (app.wallet.privateKeyAccounts().isEmpty) app.wallet.generateNewAccounts(1)
   //
   //  if (application.settings.testScript) testingScript()
   //
